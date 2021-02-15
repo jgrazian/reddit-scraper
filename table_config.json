@@ -1,0 +1,16 @@
+{
+    "tables": [
+        {
+            "name": "comments",
+            "columns": [
+                "COMMENT_ID VARCHAR(255) PRIMARY KEY",
+                "CREATED_UTC INT NOT NULL",
+                "AUTHOR VARCHAR(255) NOT NULL",
+                "BODY VARCHAR(255)",
+                "LINK_ID VARCHAR(255) NOT NULL",
+                "PARENT_ID VARCHAR(255) NOT NULL",
+                "SUBREDDIT_ID VARCHAR(255) NOT NULL"
+            ]
+        }
+    ]
+}
