@@ -1,9 +1,9 @@
+from __future__ import annotations
+
 import requests
 import time
-from typing import List
+from typing import List, TypedDict, Generator
 from dataclasses import dataclass
-
-from database import SQLiteManager
 
 
 @dataclass
@@ -15,54 +15,13 @@ class RedditComment:
     a reddit comment in favor of simplicity.
     """
 
-    comment_id: str = ""
-    created_utc: float = 0
-    author: str = ""
-    body: str = ""
-    link_id: str = ""
-    parent_id: str = ""
-    subreddit_id: str = ""
-
-    def to_db(self, db: SQLiteManager) -> None:
-        cur = db.conn.cursor()
-
-        try:
-            cur.execute(
-                "INSERT INTO comments VALUES (?,?,?,?,?,?,?);",
-                (
-                    self.comment_id,
-                    self.created_utc,
-                    self.author,
-                    self.body,
-                    self.link_id,
-                    self.parent_id,
-                    self.subreddit_id,
-                ),
-            )
-        except:
-            print("Failed to insert comment")
-        finally:
-            cur.close()
-
-    def from_db(comment_id: str, db: SQLiteManager) -> None:  # TODO
-        cur = db.conn.cursor()
-
-        try:
-            res = cur.fetchone("SELECT * FROM comments WHERE COMMENT_ID=?", comment_id)
-
-            return RedditComment(
-                comment_id=res[0],
-                created_utc=res[1],
-                author=res[2],
-                body=res[3],
-                link_id=res[4],
-                parent_id=res[5],
-                subreddit_id=res[6],
-            )
-        except:
-            print("Failed to retrieve comment")
-        finally:
-            cur.close()
+    comment_id: str
+    created_utc: int
+    author: str
+    body: str
+    link_id: str
+    parent_id: str
+    subreddit_id: str
 
 
 class RedditApi:
@@ -81,37 +40,39 @@ class RedditApi:
             for child in data["data"]["children"]:
                 child = child["data"]
 
-                comment = RedditComment()
-                comment.link_id = child["link_id"]
-                comment.author = child["author"]
-                comment.created_utc = child["created_utc"]
-                comment.parent_id = child["parent_id"]
-                comment.subreddit_id = child["subreddit_id"]
-                comment.body = child["body"]
-                comment.comment_id = child["name"]
+                comment = RedditComment(
+                    comment_id=child["name"],
+                    created_utc=child["created_utc"],
+                    author=child["author"],
+                    body=child["body"],
+                    link_id=child["link_id"],
+                    parent_id=child["parent_id"],
+                    subreddit_id=child["subreddit_id"],
+                )
 
                 comments.append(comment)
 
         return comments
 
-    def monitor_comments(self, subreddit: str, delay: int = 15) -> List[RedditComment]:
-        next_time = 0
+    def monitor_comments(
+        self, subreddit: str, delay: float = 15.0
+    ) -> Generator[List[RedditComment], float, RedditComment]:
+        next_time = 0.0
 
         while True:
             if time.time() > next_time:
-                yield self.get_latest_comments(subreddit)
+                new_delay = yield self.get_latest_comments(subreddit)
+                if new_delay:
+                    delay = new_delay
                 next_time = time.time() + delay
             else:
                 time.sleep(1.0)
 
-    def get_link_comments(self, link_id: str) -> List[RedditComment]:
-        # Get comments given reddit link_id
-        pass
-
 
 if __name__ == "__main__":
+    subreddit = input("Enter subreddit name to monitor: ")
     api = RedditApi()
 
-    for comments in api.monitor_comments("news", 10):
+    for comments in api.monitor_comments("news"):
         for comment in comments:
             print(comment.body)
