@@ -11,6 +11,23 @@
                 "PARENT_ID VARCHAR(255) NOT NULL",
                 "SUBREDDIT_ID VARCHAR(255) NOT NULL"
             ]
+        },
+        {
+            "name": "score",
+            "columns": [
+                "COMMENT_ID VARCHAR(255) PRIMARY KEY",
+                "SCORE FLOAT",
+                "SIZE INT"
+            ]
+        },
+        {
+            "name": "author",
+            "columns": [
+                "AUTHOR VARCHAR(255) NOT NULL",
+                "COMMENT_COUNT INT",
+                "TOTAL_SCORE FLOAT",
+                "AVERAGE_SCORE FLOAT"
+            ]
         }
     ]
 }

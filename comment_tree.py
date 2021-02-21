@@ -1,4 +1,6 @@
 from __future__ import annotations
+import json
+from math import exp
 
 from reddit_api import RedditComment
 from database import SQLiteManager
@@ -12,26 +14,48 @@ class CommentNode:
     parent: CommentNode | None
     children: List[CommentNode]
 
-    def __init__(self, comment: RedditComment) -> None:
+    def __init__(
+        self, comment: RedditComment, parent: CommentNode | None = None
+    ) -> None:
         self.comment = comment
         self.parent = None
         self.children = []
 
-    def build_partial_comment_tree(self, db: SQLiteManager) -> CommentNode:
+    def build_comment_tree(self, db: SQLiteManager) -> CommentNode:
         """Constructs a tree of comments top-down with this CommentNode being the root of the tree"""
 
-        for child in db.query_get_comments_by_parent(self.comment.comment_id):
-            node = CommentNode(child)
-            node.parent = self
-            node.build_partial_comment_tree(db)
+        children = db.query_get_comments_by_parent_id(self.comment.comment_id)
+        for child in children:
+            node = CommentNode(child, self)
+            node.build_comment_tree(db)
             self.children.append(node)
 
         return self
 
-    def build_full_comment_tree(self, db: SQLiteManager) -> CommentNode:
-        """Attempts to locate the top-level parent of this CommentNode before constructing a full tree top-down"""
-        top = self.comment
-        while top.parent_id[:2] != "t3":
-            top = db.query_get_comment_by_id(top.parent_id)
+    def size(self) -> int:
+        """Returns the total number of nodes in the tree"""
+        size = 1
+        for child in self.children:
+            size += child.size()
+        return size
 
-        return CommentNode(top).build_partial_comment_tree(db)
+    def score(self, depth: int = 0) -> float:
+        """Generates an 'engagement score' with the equation score = 1/e^depth"""
+        score = 1 / exp(depth)
+        for child in self.children:
+            score += child.score(depth + 1)
+        if depth == 0:
+            return score - 1
+        else:
+            return score
+
+    def json(self) -> str:
+        """Returns entire tree as JSON string"""
+
+        def to_dict(node):
+            l = {}
+            for child in node.children:
+                l[child.comment.comment_id] = to_dict(child)
+            return l
+
+        return json.dumps({self.comment.comment_id: to_dict(self)}, indent=2)

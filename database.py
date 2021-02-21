@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import json
-from typing import List
+from typing import List, Any, Iterable
 
 from reddit_api import RedditComment
 
@@ -19,12 +19,7 @@ class SQLiteManager:
             cur = self.conn.cursor()
             cur.execute("PRAGMA strict=ON;")
 
-            cur.execute(
-                """ SELECT count(name) FROM sqlite_master WHERE type='table' AND name='comments' """
-            )
-            if cur.fetchone()[0] != 1:
-                print(f"No tables found in database {database}. Creating tables...")
-                self._create_tables()
+            self._create_tables()
 
             self.conn.commit()
             cur.close()
@@ -41,8 +36,7 @@ class SQLiteManager:
         for table in table_config["tables"]:
             name = table["name"]
             print(f"Creating table {name}...")
-            cur.execute(f"DROP TABLE IF EXISTS {name}")
-            MAKE_SQL = f"CREATE TABLE {name} ("
+            MAKE_SQL = f"CREATE TABLE IF NOT EXISTS {name} ("
             for column in table["columns"]:
                 MAKE_SQL += f"{column}, "
 
@@ -52,83 +46,105 @@ class SQLiteManager:
         self.conn.commit()
         cur.close()
 
-    def query_insert_comment(self, comment: RedditComment) -> bool:
+    def _insert(self, query: str, values: Iterable[Any] = ()) -> bool:
         cur = self.conn.cursor()
 
         try:
-            cur.execute(
-                "INSERT INTO comments VALUES (?,?,?,?,?,?,?);",
-                (
-                    comment.comment_id,
-                    comment.created_utc,
-                    comment.author,
-                    comment.body,
-                    comment.link_id,
-                    comment.parent_id,
-                    comment.subreddit_id,
-                ),
-            )
+            cur.execute(query, values)
             self.conn.commit()
             return True
         except sqlite3.Error as e:
-            # print(e)
             return False
         finally:
-            self.conn.commit()
             cur.close()
 
-    def query_get_comment_by_id(self, comment_id: str) -> RedditComment | None:
+    def _select(self, query: str, values: Iterable[Any] = ()) -> List[Any]:
         cur = self.conn.cursor()
 
         try:
-            cur.execute("SELECT * FROM comments WHERE COMMENT_ID=?", comment_id)
-            res = cur.fetchone()
-
-            return RedditComment(
-                comment_id=res[0],
-                created_utc=res[1],
-                author=res[2],
-                body=res[3],
-                link_id=res[4],
-                parent_id=res[5],
-                subreddit_id=res[6],
-            )
+            cur.execute(query, values)
+            return cur.fetchall()
         except sqlite3.Error as e:
-            print(e)
-            return None
-        finally:
-            self.conn.commit()
-            cur.close()
-
-    def query_get_comments_by_parent(self, parent_id: str) -> List[RedditComment]:
-        cur = self.conn.cursor()
-
-        try:
-            cur.execute("SELECT * FROM comments WHERE PARENT_ID=?", parent_id)
-            res = cur.fetchone()
-
-            comments = []
-            for r in res:
-                comment = RedditComment(
-                    comment_id=r[0],
-                    created_utc=r[1],
-                    author=r[2],
-                    body=r[3],
-                    link_id=r[4],
-                    parent_id=r[5],
-                    subreddit_id=r[6],
-                )
-                comments.append(comment)
-
-            return comments
-
-        except sqlite3.Error as e:
-            print(e)
             return []
         finally:
-            self.conn.commit()
             cur.close()
+
+    def query_insert_comment(self, comment: RedditComment) -> bool:
+        """Inserts a RedditComment into the comments table"""
+        query = "INSERT INTO comments VALUES (?,?,?,?,?,?,?);"
+        values = (
+            comment.comment_id,
+            comment.created_utc,
+            comment.author,
+            comment.body,
+            comment.link_id,
+            comment.parent_id,
+            comment.subreddit_id,
+        )
+        return self._insert(query, values)
+
+    def query_insert_score(self, id: str, score: float, size: int) -> bool:
+        """Inserts a comment_id and score into the score table"""
+        query = "INSERT INTO score VALUES (?,?,?);"
+        values = (id, score, size)
+        return self._insert(query, values)
+
+    def query_insert_author_table(self) -> bool:
+        """Aggregate all of an author's comments into a total score"""
+        query = """INSERT OR REPLACE INTO author VALUES (
+                    SELECT
+                        a.AUTHOR,
+                        COUNT(b.SCORE) "COMMENT_COUNT",
+                        SUM(b.SCORE) "TOTAL_SCORE",
+                        SUM(b.SCORE) / COUNT(b.SCORE) "AVERAGE_SCORE"
+                    FROM
+                        comments a,
+                        score b
+                    WHERE
+                        a.COMMENT_ID = b.COMMENT_ID
+                    GROUP BY
+                        a.AUTHOR
+                )"""
+
+        return self._insert(query)
+
+    def query_get_comment_by_id(self, comment_id: str) -> RedditComment | None:
+        query = "SELECT * FROM comments WHERE COMMENT_ID=?"
+        values = [comment_id]
+
+        res = self._select(query, values)
+
+        if res:
+            return RedditComment(*res[0])
+        else:
+            return None
+
+    def query_get_comments_by_parent_id(self, parent_id: str) -> List[RedditComment]:
+        """Gets all child comments given a parent's comment_id"""
+        query = "SELECT * FROM comments WHERE PARENT_ID=?"
+        values = [parent_id]
+
+        comments = []
+        for r in self._select(query, values):
+            comments.append(RedditComment(*r))
+
+        return comments
+
+    def query_get_top_level_comment(self) -> RedditComment | None:
+        """Selects a random comment who's parent is a reddit post (t3_ type)"""
+        query = """SELECT * FROM comments 
+                            WHERE PARENT_ID LIKE "t3_%" 
+                            AND COMMENT_ID NOT IN (SELECT COMMENT_ID FROM score) ORDER BY RANDOM() LIMIT 1"""
+
+        res = self._select(query)
+
+        if res:
+            return RedditComment(*res[0])
+        else:
+            return None
 
 
 if __name__ == "__main__":
-    db = SQLiteManager("./test.db")
+    db = SQLiteManager("./data/main.db")
+
+    print(db.query_get_top_level_comment())
