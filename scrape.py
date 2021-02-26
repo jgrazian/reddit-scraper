@@ -31,14 +31,11 @@ while True:
     # But not too much overlap. So update the delay accordingly
     if num_failed > 8:
         delay += delay_inc
-        delay_inc += delay_inc
     elif num_failed <= 1:
         delay *= 0.5
-        delay_inc = 1.0
 
-    if delay > 60.0:
-        delay = 60.0
-        delay_inc = 1.0
+    if delay > 30.0:
+        delay = 30.0
 
     print(
         f"Got {len(comments) - num_failed} new comments out of {len(comments)}. Next query delay {delay}s."

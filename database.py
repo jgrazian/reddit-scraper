@@ -91,8 +91,7 @@ class SQLiteManager:
 
     def query_insert_author_table(self) -> bool:
         """Aggregate all of an author's comments into a total score"""
-        query = """INSERT OR REPLACE INTO author VALUES (
-                    SELECT
+        query = """INSERT OR REPLACE INTO author SELECT
                         a.AUTHOR,
                         COUNT(b.SCORE) "COMMENT_COUNT",
                         SUM(b.SCORE) "TOTAL_SCORE",
@@ -104,7 +103,7 @@ class SQLiteManager:
                         a.COMMENT_ID = b.COMMENT_ID
                     GROUP BY
                         a.AUTHOR
-                )"""
+                """
 
         return self._insert(query)
 
@@ -142,6 +141,15 @@ class SQLiteManager:
             return RedditComment(*res[0])
         else:
             return None
+
+    def query_get_author_data(self):
+        query = """SELECT * FROM author
+                        ORDER BY AVERAGE_SCORE"""
+        return self._select(query)
+    
+    def query_get_score_data(self):
+        query = """SELECT * FROM score"""
+        return self._select(query)
 
 
 if __name__ == "__main__":
